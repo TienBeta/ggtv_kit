@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="#F5F5F5">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Android TV Remote"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Connection Section -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="30dp"
+            android:gravity="center_vertical">
+
+            <EditText
+                android:id="@+id/etTvIpAddress"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Nhập IP của TV (ví dụ: 192.168.1.100)"
+                android:inputType="textUri"
+                android:text="172.16.0.64"
+                android:paddingHorizontal="12dp"
+                android:textSize="14sp"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnConnect"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="Kết nối"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#4CAF50"
+                android:paddingHorizontal="16dp" />
+
+        </LinearLayout>
+
+        <!-- Power Button -->
+        <Button
+            android:id="@+id/btnPower"
+            android:layout_width="120dp"
+            android:layout_height="48dp"
+            android:text="POWER"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#F44336"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Navigation Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Điều hướng"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:layout_marginBottom="16dp" />
+
+        <!-- D-Pad Layout -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginBottom="20dp">
+
+            <!-- Up Button -->
+            <Button
+                android:id="@+id/btnUp"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:text="▲"
+                android:textSize="20sp"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#2196F3"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Left, OK, Right Row -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnLeft"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:text="◄"
+                    android:textSize="20sp"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="#2196F3"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/btnOk"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:text="OK"
+                    android:textSize="12sp"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="#FF9800"
+                    android:layout_marginHorizontal="4dp" />
+
+                <Button
+                    android:id="@+id/btnRight"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:text="►"
+                    android:textSize="20sp"
+                    android:textColor="@android:color/white"
+                    android:backgroundTint="#2196F3"
+                    android:layout_marginStart="4dp" />
+
+            </LinearLayout>
+
+            <!-- Down Button -->
+            <Button
+                android:id="@+id/btnDown"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:text="▼"
+                android:textSize="20sp"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#2196F3"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
+
+        <!-- Control Buttons Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Điều khiển"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Home and Back Row -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <Button
+                android:id="@+id/btnHome"
+                android:layout_width="100dp"
+                android:layout_height="48dp"
+                android:text="HOME"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#9C27B0"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnBack"
+                android:layout_width="100dp"
+                android:layout_height="48dp"
+                android:text="BACK"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#9C27B0"
+                android:layout_marginStart="8dp" />
+
+
+            <Button
+                android:id="@+id/btnYoutube"
+                android:layout_width="100dp"
+                android:layout_height="48dp"
+                android:text="YOUTUBE"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#9C27B0"
+                android:layout_marginStart="8dp" />
+
+        </LinearLayout>
+
+        <!-- Menu Button -->
+        <Button
+            android:id="@+id/btnMenu"
+            android:layout_width="120dp"
+            android:layout_height="48dp"
+            android:text="MENU"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#607D8B"
+            android:layout_marginBottom="20dp" />
+
+        <Button
+            android:id="@+id/btnCast"
+            android:layout_width="120dp"
+            android:layout_height="48dp"
+            android:text="Cast"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#607D8B"
+            android:layout_marginBottom="20dp" />
+
+        <!-- Volume Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Âm lượng"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Volume Buttons -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnVolumeDown"
+                android:layout_width="100dp"
+                android:layout_height="48dp"
+                android:text="VOL -"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#795548"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnVolumeUp"
+                android:layout_width="100dp"
+                android:layout_height="48dp"
+                android:text="VOL +"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#795548"
+                android:layout_marginStart="8dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

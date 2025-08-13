@@ -1,0 +1,477 @@
+"""
+Android TV Remote Python Module
+"""
+import nest_asyncio
+nest_asyncio.apply()
+import asyncio
+import logging
+import os
+from os.path import join
+from typing import Optional
+from androidtvremote2 import (
+    AndroidTVRemote,
+    CannotConnect,
+    ConnectionClosed,
+    InvalidAuth,
+    VolumeInfo,
+)
+import time
+
+# Global variables to maintain connection
+remote_instance: Optional[AndroidTVRemote] = None
+
+# Tracking last command time
+last_command_time = None
+ping_interval = 15 # Ping for each 15s for avoid timeout 20s
+
+# Key mapping
+KEY_MAPPING = {
+    "KEYCODE_POWER": "POWER",
+    "KEYCODE_HOME": "HOME",
+    "KEYCODE_BACK": "BACK",
+    "KEYCODE_VOLUME_UP": "VOLUME_UP",
+    "KEYCODE_VOLUME_DOWN": "VOLUME_DOWN",
+    "KEYCODE_DPAD_CENTER": "DPAD_CENTER",
+    "KEYCODE_DPAD_UP": "DPAD_UP",
+    "KEYCODE_DPAD_DOWN": "DPAD_DOWN",
+    "KEYCODE_DPAD_LEFT": "DPAD_LEFT",
+    "KEYCODE_DPAD_RIGHT": "DPAD_RIGHT",
+    "KEYCODE_MENU": "MENU",
+    "KEYCODE_MUTE": "MUTE",
+}
+
+def setup_logging():
+    """setup logging for debug"""
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    return logger
+
+logger = setup_logging()
+
+def create_cert_files():
+    """
+    create certificate files for AndroidTVRemote
+    cert.pem & key.pem
+    """
+    try:
+        # create files
+        cert_file = join(os.environ["HOME"], "cert.pem")
+        key_file = join(os.environ["HOME"], "key.pem")
+
+        return cert_file, key_file
+    except Exception as e:
+        logger.error(f"cert files failed: {e}")
+        return None, None
+
+
+def should_reconnect() -> bool:
+    """check if need reconnect to TV"""
+    global last_command_time
+
+    if not last_command_time:
+        return False
+
+    now = time.time()
+    time_since_last = now - last_command_time
+    logger.info(f"should_reconnect: time_since_last={time_since_last:.1f}s, ping_interval={ping_interval}s")
+    return time_since_last >= ping_interval
+
+def try_reconnect() -> bool:
+    """send re connect to TV"""
+    global remote_instance
+
+    if not remote_instance:
+        return False
+
+    try:
+        logger.info(f"Reconnecting done")
+        return run_coroutine(async_retry_connection())
+    except Exception as e:
+        logger.warning(f"Reconnection failed: {e}")
+        return False
+
+
+async def async_pair(remote: AndroidTVRemote) -> str:
+    """
+    pairing with Android TV - return pairing code if needed
+    """
+    try:
+        name, mac = await remote.async_get_name_and_mac()
+        logger.info(f"pairing with {remote.host} {name} {mac}")
+
+        await remote.async_start_pairing()
+        logger.info("pairing started. check on TV to get pairing code.")
+
+        # return signal to app handle send pairing code
+        return "PAIRING_REQUIRED"
+
+    except Exception as e:
+        logger.error(f"pairing failed: {e}")
+        return "PAIRING_ERROR"
+
+async def async_finish_pairing(remote: AndroidTVRemote, pairing_code: str) -> bool:
+    """
+    Finish pairing with code from TV
+    """
+    try:
+        logger.info(f"finish pairing with code: {pairing_code}")
+        await remote.async_finish_pairing(pairing_code)
+        logger.info("Pairing successful!")
+        return True
+
+    except InvalidAuth:
+        logger.warning("Pairing code invalid!")
+        return False
+    except ConnectionClosed:
+        logger.warning("Connection closed, please try again")
+        return False
+    except Exception as e:
+        logger.error(f"finish pairing failed: {e}")
+        return False
+
+async def async_connect_to_tv(host: str, appName: str) -> bool:
+    """
+    async connect to Android TV
+    """
+    global remote_instance
+
+    try:
+        logger.info(f"Connecting {host}")
+
+        # create certificate files
+        cert_file, key_file = create_cert_files()
+        if not cert_file or not key_file:
+            return False
+
+        # create instance of AndroidTVRemote
+        remote_instance = AndroidTVRemote(
+            appName,  # client_name
+            cert_file,             # certfile
+            key_file,              # keyfile
+            host                   # host
+        )
+
+        # Generate certificate if needed
+        if await remote_instance.async_generate_cert_if_missing():
+            logger.info("create new certificate succeed, need pairing")
+            pairing_result = await async_pair(remote_instance)
+            if pairing_result == "PAIRING_REQUIRED":
+                # Raise exception for Kotlin knows to pairing
+                raise Exception("PAIRING_REQUIRED")
+            elif pairing_result == "PAIRING_ERROR":
+                return False
+
+        # try to connect
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                await remote_instance.async_connect()
+                break
+            except InvalidAuth:
+                logger.warning(f"Need pair again, attempt {attempt + 1}")
+                pairing_result = await async_pair(remote_instance)
+                if pairing_result == "PAIRING_REQUIRED":
+                    raise Exception("PAIRING_REQUIRED")
+                continue
+            except (CannotConnect, ConnectionClosed) as e:
+                logger.error(f"Cannot connect: {e}")
+                if attempt == max_retries - 1:
+                    return False
+                await asyncio.sleep(2)
+
+        # Keep reconnecting
+        remote_instance.keep_reconnecting()
+
+        logger.info("Connect successful!")
+        logger.info(f"Device info: {remote_instance.device_info}")
+        logger.info(f"Is on: {remote_instance.is_on}")
+        logger.info(f"Current app: {remote_instance.current_app}")
+
+        return True
+
+    except Exception as e:
+        error_msg = str(e)
+        if "PAIRING_REQUIRED" in error_msg:
+            # Re-raise to Kotlin handle
+            raise e
+        logger.error(f"Connect error: {e}")
+        return False
+
+async def async_disconnect_from_tv():
+    """
+    Disconnect from Android TV
+    """
+    global remote_instance
+
+    try:
+        if remote_instance:
+            remote_instance.disconnect()
+            remote_instance = None
+            logger.info("Disconnected!")
+    except Exception as e:
+        logger.error(f"Disconnect error: {e}")
+
+def async_send_key(key_code: str):
+    """
+    Send key command to Android TV
+    """
+    global remote_instance, last_command_time
+
+    if not remote_instance:
+        raise Exception("Not connect to TV yet")
+
+    # Ping check if needed before send command
+    if should_reconnect():
+        if not try_reconnect():
+            logger.warning("Connection seems unstable, but continuing...")
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if key_code in KEY_MAPPING:
+                command = KEY_MAPPING[key_code]
+            else:
+                # try to send directly
+                command = key_code.replace("KEYCODE_", "")
+
+            remote_instance.send_key_command(command)
+            logger.info(f"key sent: {key_code} -> {command}")
+
+            # Update last command time
+            last_command_time = time.time()
+            return
+
+        except Exception as e:
+            logger.error(f"send key error: {e}")
+
+            if attempt < max_retries - 1: # retry still remain
+                try:
+                    # quick reconnecting
+                    logger.info("Attempting quick reconnect...")
+                    run_coroutine(remote_instance.async_connect())
+                    remote_instance.keep_reconnecting()
+                    time.sleep(1)  # short waiting
+                except Exception as reconnect_error:
+                    logger.error(f"Quick reconnect failed: {reconnect_error}")
+                    if attempt == max_retries - 1:
+                        raise
+            else:
+                logger.error(f"Send key error after {max_retries} attempts: {e}")
+                raise
+
+def update_last_activity():
+    """Update last time command """
+    global last_command_time
+    last_command_time = time.time()
+
+def run_coroutine(coro):
+    """
+    Helper function to run coroutine on current thread
+    Fix event loop handling to avoid deadlock
+    """
+    try:
+        # Try to get current loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # current loop is not exist, create a new one
+            return asyncio.run(coro)
+
+        # If a loop is running, create task and schedule
+        if loop.is_running():
+            # create future to waiting result
+            import concurrent.futures
+            import threading
+
+            result_future = concurrent.futures.Future()
+
+            def run_in_new_thread():
+                """Run coroutine on new thread with new event loop"""
+                try:
+                    result = asyncio.run(coro)
+                    result_future.set_result(result)
+                except Exception as e:
+                    result_future.set_exception(e)
+
+            # Run on new thread
+            thread = threading.Thread(target=run_in_new_thread)
+            thread.start()
+            thread.join()
+
+            return result_future.result()
+        else:
+            # Loop exist but not running
+            return loop.run_until_complete(coro)
+
+    except RuntimeError:
+        # Fallback: create new loop
+        return asyncio.run(coro)
+
+def finish_pairing(pairing_code: str) -> bool:
+    """
+    Wrapper function for Kotlin complete pairing
+    """
+    global remote_instance
+
+    if not remote_instance:
+        logger.error("Doesn't have remote instance to pairing")
+        return False
+
+    try:
+        return run_coroutine(async_finish_pairing(remote_instance, pairing_code))
+    except Exception as e:
+        logger.error(f"finish_pairing error: {e}")
+        return False
+
+def retry_connection() -> bool:
+    """
+    Wrapper function to retry connect after pairing succeed
+    """
+    global remote_instance
+
+    if not remote_instance:
+        logger.error("Doesn't have remote instance to connect")
+        return False
+
+    try:
+        return run_coroutine(async_retry_connection())
+    except Exception as e:
+        logger.error(f"retry_connection error: {e}")
+        return False
+
+async def async_retry_connection() -> bool:
+    """
+    async retry connect after pairing succeed
+    """
+    global remote_instance
+
+    try:
+        await remote_instance.async_connect()
+        remote_instance.keep_reconnecting()
+
+        logger.info("Connect successful!")
+        logger.info(f"Device info: {remote_instance.device_info}")
+        logger.info(f"Is on: {remote_instance.is_on}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"async_retry_connection error: {e}")
+        return False
+def connect_to_tv(host: str, appName: str) -> bool:
+    """
+    Wrapper function for Kotlin connect to TV
+    """
+    try:
+        return run_coroutine(async_connect_to_tv(host, appName))
+    except Exception as e:
+        error_msg = str(e)
+        if "PAIRING_REQUIRED" in error_msg:
+            # Re-raise để Kotlin biết cần pairing
+            raise e
+        logger.error(f"connect_to_tv error: {e}")
+        return False
+
+def disconnect_from_tv():
+    """
+    Wrapper function for Kotlin to disconnect from TV
+    """
+    try:
+        run_coroutine(async_disconnect_from_tv())
+    except Exception as e:
+        logger.error(f"disconnect_from_tv error: {e}")
+
+def send_key(key_code: str):
+    """
+    Wrapper function for Kotlin to send key
+    """
+    try:
+        async_send_key(key_code)
+    except Exception as e:
+        logger.error(f"send_key error: {e}")
+        raise
+
+def send_app_link(url: str):
+    """
+    Send app link to open app,for example : https://www.youtube.com or youtube://
+    """
+    global remote_instance
+
+    if not remote_instance:
+        raise Exception("Not connect to TV yet!")
+
+    try:
+        remote_instance.send_launch_app_command(url)
+        update_last_activity()
+        logger.info(f"app link sent: {url}")
+    except Exception as e:
+        logger.error(f"send_app_link error: {e}")
+        raise
+
+def send_text(text: str):
+    """
+    Send text to TV
+    """
+    global remote_instance
+
+    if not remote_instance:
+        raise Exception("Not connect to TV yet!")
+
+    try:
+        remote_instance.send_text(text)
+        update_last_activity()
+        logger.info(f"text sent: {text}")
+    except Exception as e:
+        logger.error(f"send_text error: {e}")
+        raise
+
+# Constants default apps
+COMMON_APPS = {
+     "appletv": "https://tv.apple.com",
+     "youtube": "https://www.youtube.com",
+     "netflix": "com.netflix.ninja",
+     "disney+": "com.disney.disneyplus",
+     "amazon prime": "com.amazon.amazonvideo.livingroom",
+     "kodi": "org.xbmc.kodi",
+     "hulu": "com.hulu.livingroomplus",
+     "max": "com.maxtvplus.yorchapps",
+     "spotify": "com.spotify.tv.android",
+     "pluto": "tv.pluto.android",
+}
+
+def open_app(app_name: str):
+    """
+    Open app by name, for example : youtube
+    """
+    app_name_lower = app_name.lower().strip()
+    if app_name_lower in COMMON_APPS:
+        send_app_link(COMMON_APPS[app_name_lower])
+    else:
+        logger.warning(f"App link not found: {app_name}")
+
+def get_device_info() -> dict:
+    """
+    Get device info
+    """
+    global remote_instance
+    if remote_instance:
+        return {
+            "device_info": str(remote_instance.device_info),
+            "is_on": remote_instance.is_on,
+            "current_app": remote_instance.current_app,
+            "volume_info": str(remote_instance.volume_info) if hasattr(remote_instance, 'volume_info') else None
+        }
+    return {}
+
+# Cleanup function
+def cleanup():
+    """
+    Cleanup when app close
+    """
+    global remote_instance
+    if remote_instance:
+        try:
+            remote_instance.disconnect()
+        except:
+            pass
+        remote_instance = None
