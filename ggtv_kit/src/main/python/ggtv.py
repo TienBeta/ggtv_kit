@@ -183,7 +183,7 @@ async def async_connect_to_tv(host: str, appName: str) -> bool:
             pairing_result = await async_pair(remote_instance)
             if pairing_result == "PAIRING_REQUIRED":
                 # Raise custom exception
-                raise PairingRequiredException("Pairing required for new certificate")
+                raise PairingRequiredException(pairing_result)
             elif pairing_result == "PAIRING_ERROR":
                 return False
 
@@ -197,7 +197,7 @@ async def async_connect_to_tv(host: str, appName: str) -> bool:
                 logger.warning(f"Need pair again, attempt {attempt + 1}")
                 pairing_result = await async_pair(remote_instance)
                 if pairing_result == "PAIRING_REQUIRED":
-                    raise PairingRequiredException("Re-pairing required")
+                    raise PairingRequiredException(pairing_result)
                 continue
             except (CannotConnect, ConnectionClosed) as e:
                 logger.error(f"Cannot connect: {e}")
