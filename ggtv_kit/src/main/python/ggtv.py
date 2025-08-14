@@ -41,7 +41,7 @@ remote_instance: Optional[AndroidTVRemote] = None
 
 # Track last command time with thread safety
 last_command_time = None
-ping_interval = 15  # Ping every 15s to avoid timeout 20s
+ping_interval = 5  # Ping every 5s to avoid timeout 20s
 
 # Key mapping
 KEY_MAPPING = {
@@ -110,7 +110,7 @@ def try_reconnect() -> bool:
 
         try:
             logger.info("Attempting reconnection...")
-            return run_coroutine(async_retry_connection())
+            return run_async_from_sync(async_retry_connection())
         except Exception as e:
             logger.warning(f"Reconnection failed: {e}")
             return False
@@ -237,7 +237,7 @@ async def async_disconnect_from_tv():
     except Exception as e:
         logger.error(f"Disconnect error: {e}")
 
-def async_send_key(key_code: str):
+async def async_send_key(key_code: str) -> bool:
     """
     Send key command to Android TV
     Fixed: Better reconnection logic and error handling
@@ -270,7 +270,7 @@ def async_send_key(key_code: str):
 
             # Update last command time with thread safety
             update_last_activity()
-            return
+            return True
 
         except Exception as e:
             logger.error(f"send key error: {e}")
@@ -279,16 +279,21 @@ def async_send_key(key_code: str):
                 try:
                     # Quick reconnecting
                     logger.info("Attempting quick reconnect...")
-                    run_coroutine(remote_instance.async_connect())
+                    await asyncio.wait_for(remote_instance.async_connect(),5)
                     remote_instance.keep_reconnecting()
                     time.sleep(1)  # Short waiting
+                    with _remote_lock:
+                        remote_instance.send_key_command(command)
+                    logger.info(f"key sent: {key_code} -> {command} after reconnected")
+                    update_last_activity()
+                    return True
                 except Exception as reconnect_error:
                     logger.error(f"Quick reconnect failed: {reconnect_error}")
                     if attempt == max_retries - 1:
-                        raise
+                        raise ConnectionFailedException("Failed to reconnect to TV")
             else:
                 logger.error(f"Send key error after {max_retries} attempts: {e}")
-                raise
+                raise Exception("Failed to send key to TV")
 
 def update_last_activity():
     """
@@ -298,38 +303,17 @@ def update_last_activity():
     with _time_lock:
         last_command_time = time.time()
 
-def run_coroutine(coro, timeout=30):
+def run_async_from_sync(coro, timeout=5):
     """
-    Helper function to run coroutine on current thread
-    Fixed: Added timeout and better thread management
+    run async from sync with timeout.
     """
     try:
-        # Try to get current loop
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # No current loop, create a new one
-            return asyncio.run(coro)
-
-        # If a loop is running, use thread pool
-        if loop.is_running():
-            def run_in_new_thread():
-                """Run coroutine on new thread with new event loop"""
-                return asyncio.run(coro)
-
-            # Use thread pool instead of creating new thread
-            future = _thread_pool.submit(run_in_new_thread)
-            return future.result(timeout=timeout)
-        else:
-            # Loop exists but not running
-            return loop.run_until_complete(coro)
-
-    except concurrent.futures.TimeoutError:
-        logger.error(f"Coroutine timed out after {timeout}s")
-        raise
-    except RuntimeError:
-        # Fallback: create new loop
-        return asyncio.run(coro)
+        # Sử dụng asyncio.wait_for để đảm bảo timeout luôn được áp dụng
+        timed_coro = asyncio.wait_for(coro, timeout=timeout)
+        return asyncio.run(timed_coro)
+    except asyncio.TimeoutError:
+        logger.error(f"Tác vụ đã hết thời gian chờ sau {timeout} giây.")
+        raise  # Ném lại lỗi TimeoutError để code gọi nó có thể xử lý
 
 def finish_pairing(pairing_code: str) -> bool:
     """
@@ -343,7 +327,7 @@ def finish_pairing(pairing_code: str) -> bool:
             return False
 
     try:
-        return run_coroutine(async_finish_pairing(remote_instance, pairing_code))
+        return run_async_from_sync(async_finish_pairing(remote_instance, pairing_code))
     except Exception as e:
         logger.error(f"finish_pairing error: {e}")
         return False
@@ -360,7 +344,7 @@ def retry_connection() -> bool:
             return False
 
     try:
-        return run_coroutine(async_retry_connection())
+        return run_async_from_sync(async_retry_connection())
     except Exception as e:
         logger.error(f"retry_connection error: {e}")
         return False
@@ -391,7 +375,7 @@ def connect_to_tv(host: str, appName: str) -> bool:
     Fixed: Better exception handling
     """
     try:
-        return run_coroutine(async_connect_to_tv(host, appName))
+        return run_async_from_sync(async_connect_to_tv(host, appName))
     except PairingRequiredException as e:
         # Re-raise for Kotlin to know pairing is needed
         raise e
@@ -404,19 +388,19 @@ def disconnect_from_tv():
     Wrapper function for Kotlin to disconnect from TV
     """
     try:
-        run_coroutine(async_disconnect_from_tv())
+        run_async_from_sync(async_disconnect_from_tv())
     except Exception as e:
         logger.error(f"disconnect_from_tv error: {e}")
 
-def send_key(key_code: str):
+def send_key(key_code: str) -> bool:
     """
     Wrapper function for Kotlin to send key
     """
     try:
-        async_send_key(key_code)
+        return run_async_from_sync(async_send_key(key_code))
     except Exception as e:
         logger.error(f"send_key error: {e}")
-        raise
+        raise e
 
 def send_app_link(url: str):
     """
@@ -436,7 +420,7 @@ def send_app_link(url: str):
         logger.info(f"app link sent: {url}")
     except Exception as e:
         logger.error(f"send_app_link error: {e}")
-        raise
+        raise e
 
 def send_text(text: str):
     """
@@ -456,7 +440,7 @@ def send_text(text: str):
         logger.info(f"text sent: {text}")
     except Exception as e:
         logger.error(f"send_text error: {e}")
-        raise
+        raise e
 
 # Default app constants
 COMMON_APPS = {
