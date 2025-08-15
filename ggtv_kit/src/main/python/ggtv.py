@@ -13,12 +13,9 @@ from androidtvremote2 import (
     CannotConnect,
     ConnectionClosed,
     InvalidAuth,
-    VolumeInfo,
 )
 import time
-import threading
 from threading import Lock
-import concurrent.futures
 
 # Custom exceptions to replace string matching
 class PairingRequiredException(Exception):
@@ -32,9 +29,6 @@ class ConnectionFailedException(Exception):
 # Thread safety with locks
 _remote_lock = Lock()
 _time_lock = Lock()
-
-# Thread pool to manage threads
-_thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
 # Global variables to maintain connection
 remote_instance: Optional[AndroidTVRemote] = None
@@ -97,7 +91,7 @@ def should_reconnect() -> bool:
     logger.info(f"should_reconnect: time_since_last={time_since_last:.1f}s, ping_interval={ping_interval}s")
     return time_since_last >= ping_interval
 
-def try_reconnect() -> bool:
+def retry_connection() -> bool:
     """
     Send reconnect to TV
     Fixed: Better error handling
@@ -250,7 +244,7 @@ async def async_send_key(key_code: str) -> bool:
 
     # Ping check if needed before send command
     if should_reconnect():
-        if not try_reconnect():
+        if not retry_connection():
             logger.error("Reconnection failed, cannot send command")
             raise ConnectionFailedException("Failed to reconnect to TV")
 
@@ -281,9 +275,10 @@ async def async_send_key(key_code: str) -> bool:
                     logger.info("Attempting quick reconnect...")
                     await asyncio.wait_for(remote_instance.async_connect(),5)
                     remote_instance.keep_reconnecting()
-                    time.sleep(1)  # Short waiting
+
                     with _remote_lock:
                         remote_instance.send_key_command(command)
+
                     logger.info(f"key sent: {key_code} -> {command} after reconnected")
                     update_last_activity()
                     return True
@@ -303,16 +298,15 @@ def update_last_activity():
     with _time_lock:
         last_command_time = time.time()
 
-def run_async_from_sync(coro, timeout=5):
+def run_async_from_sync(coro, timeout=3):
     """
     run async from sync with timeout.
     """
     try:
-        # Sử dụng asyncio.wait_for để đảm bảo timeout luôn được áp dụng
         timed_coro = asyncio.wait_for(coro, timeout=timeout)
         return asyncio.run(timed_coro)
     except asyncio.TimeoutError:
-        logger.error(f"Tác vụ đã hết thời gian chờ sau {timeout} giây.")
+        logger.error(f"run_async_from_sync timeout after {timeout} s.")
         raise  # Ném lại lỗi TimeoutError để code gọi nó có thể xử lý
 
 def finish_pairing(pairing_code: str) -> bool:
@@ -330,23 +324,6 @@ def finish_pairing(pairing_code: str) -> bool:
         return run_async_from_sync(async_finish_pairing(remote_instance, pairing_code))
     except Exception as e:
         logger.error(f"finish_pairing error: {e}")
-        return False
-
-def retry_connection() -> bool:
-    """
-    Wrapper function to retry connect after pairing succeed
-    """
-    global remote_instance
-
-    with _remote_lock:
-        if not remote_instance:
-            logger.error("Doesn't have remote instance to connect")
-            return False
-
-    try:
-        return run_async_from_sync(async_retry_connection())
-    except Exception as e:
-        logger.error(f"retry_connection error: {e}")
         return False
 
 async def async_retry_connection() -> bool:
@@ -397,7 +374,7 @@ def send_key(key_code: str) -> bool:
     Wrapper function for Kotlin to send key
     """
     try:
-        return run_async_from_sync(async_send_key(key_code))
+        return run_async_from_sync(async_send_key(key_code),2)
     except Exception as e:
         logger.error(f"send_key error: {e}")
         raise e
@@ -489,7 +466,7 @@ def cleanup():
     Cleanup when app closes
     Fixed: Also cleanup thread pool and proper thread safety
     """
-    global remote_instance, _thread_pool
+    global remote_instance
 
     with _remote_lock:
         if remote_instance:
@@ -498,7 +475,3 @@ def cleanup():
             except:
                 pass
             remote_instance = None
-
-    # Cleanup thread pool
-    if _thread_pool:
-        _thread_pool.shutdown(wait=True)
