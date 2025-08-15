@@ -1,20 +1,24 @@
 package co.vulcanlabs.ggtv_kit.connect
 
 import android.content.Context
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
+import java.util.concurrent.Executors
 
 internal class GGTVKitImpl(
     private val clientName: String,
     context: Context,
     private val enableLog: Boolean,
-    private val dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO
+    private val dispatcher: CoroutineDispatcher = Executors.newSingleThreadExecutor {
+        Thread(it, "GGTVPythonThread")
+    }.asCoroutineDispatcher()
 ) : GGTVKit {
     private val ggtvManager = GGTVManager(context)
 
